@@ -1,0 +1,73 @@
+# =====================================================================
+# 数据隐私：所有输入数据和由数据生成的产物一律不进仓库
+# =====================================================================
+
+# 1) 数据目录（整目录忽略，只保留说明文件）
+experiments/*
+!experiments/README.md
+export/*
+!export/README.md
+workspace/
+private/
+
+# 含真实案例（物料/装置代码、经济数值）的内部文档：只留本地
+rps_tools/diagnose/CAPABILITIES.md
+rps_tools/diagnose/README.md
+rps_tools/exp_analyzer/PROJECT.md
+rps_tools/exp_analyzer/TRIAGE.md
+
+# 2) 全局兜底：任何位置的数据 / 产物文件，防止放错目录被误提交
+*.json
+*.jsonl
+*.mps
+*.xmps
+*.freemps
+*.lp
+*.txt
+*.log
+*.csv
+*.tsv
+*.xls
+*.xlsx
+*.mmd
+*.html
+*.jsx
+*.sqlite
+*.sqlite3
+*.db
+*.parquet
+*.pkl
+*.npy
+*.npz
+*.zip
+*.7z
+*.rar
+*.tar
+*.tgz
+*.gz
+*.pptx
+*.docx
+*.pdf
+
+# 3) 白名单：项目自身需要的、不含数据的文件
+!requirements.txt
+!rps_tools/web/static/index.html
+!rps_tools/exp_analyzer/sample_patch.json
+
+# =====================================================================
+# 本地环境 / 密钥
+# =====================================================================
+.env
+.env.*
+.claude/
+.vscode/
+.idea/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+build/
+dist/

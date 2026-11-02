@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rps_tools"
+version = "0.2.0"
+description = "rps_solver 配套诊断工具集：文件差异对比 / 实验因果链分析 / 物料约束诊断"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+    "python-multipart>=0.0.9",
+    "markdown>=3.5",
+]
+
+[project.optional-dependencies]
+fast = ["orjson>=3.9"]
+dev = ["pytest>=8", "httpx>=0.27", "orjson>=3.9"]
+
+[project.scripts]
+rps-tools = "rps_tools.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["rps_tools*"]
+
+[tool.setuptools.package-data]
+rps_tools = ["web/static/*", "**/*.md", "**/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

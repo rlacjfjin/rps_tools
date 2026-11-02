@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>rps_tools 诊断工具集</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232563eb'/%3E%3Cpath d='M8 22l5-7 4 4 7-10' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#/">rps_tools</a>
+    <nav id="nav"></nav>
+    <span class="spacer"></span>
+    <a class="nav-link" href="/docs" target="_blank" rel="noopener">接口文档</a>
+  </header>
+  <main id="app"><div class="loading">加载中…</div></main>
+
+  <dialog id="browser" class="browser">
+    <form method="dialog" class="browser-head">
+      <strong>选择服务器上的文件</strong>
+      <span class="spacer"></span>
+      <button class="btn ghost" value="cancel">关闭</button>
+    </form>
+    <div class="browser-path" id="browser-path"></div>
+    <input class="browser-filter" id="browser-filter" placeholder="过滤文件名…">
+    <ul class="browser-list" id="browser-list"></ul>
+  </dialog>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
