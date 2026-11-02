@@ -4,6 +4,7 @@
   tools                      列出所有工具及参数
   run <tool_id> k=v ...      在当前进程里直接跑一个工具（与 Web 用的是同一份实现）
   diff <A> <B> [k=v ...]     文件对比的快捷方式，结果另存 CSV
+  regress list|snapshot|check  本地真实数据回归（基线不进仓库）
 
 原有入口仍然可用：
   python -m rps_tools.exp_analyzer <experiment_dir>
@@ -163,6 +164,9 @@ def main(argv=None) -> None:
     d.add_argument("--csv", help="CSV 输出路径")
     d.add_argument("--out", help="产物目录")
     d.set_defaults(func=cmd_diff)
+
+    from rps_tools import regress
+    regress.add_parser(sub)
 
     args = ap.parse_args(argv)
     args.func(args)

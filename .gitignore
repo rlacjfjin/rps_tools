@@ -53,13 +53,16 @@ rps_tools/exp_analyzer/TRIAGE.md
 !requirements.txt
 !rps_tools/web/static/index.html
 !rps_tools/exp_analyzer/sample_patch.json
+!scripts/privacy_allowlist.txt
 
 # =====================================================================
 # 本地环境 / 密钥
 # =====================================================================
 .env
 .env.*
-.claude/
+# Claude Code：只共享角色定义（.claude/agents/），本地设置不提交
+.claude/*
+!.claude/agents/
 .vscode/
 .idea/
 

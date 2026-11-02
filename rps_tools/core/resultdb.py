@@ -193,11 +193,15 @@ class DiffStore:
         where, args = self._where(kind, section, field, q)
         order = SORTS.get(sort, SORTS["id"])
         limit = max(1, min(int(limit), 2000))
-        with self._connect() as conn:
+        # 注意：sqlite3 连接的 with 只管事务不关连接，必须显式 close，否则 Windows 上文件一直被占用、任务目录删不掉
+        conn = self._connect()
+        try:
             total = conn.execute(f"SELECT COUNT(*) FROM items {where}", args).fetchone()[0]
             rows = conn.execute(
                 f"SELECT * FROM items {where} ORDER BY {order} LIMIT ? OFFSET ?",
                 args + [limit, max(0, int(offset))]).fetchall()
+        finally:
+            conn.close()
         return {"total": total, "offset": offset, "limit": limit, "items": [dict(r) for r in rows]}
 
     def iter_rows(self, kind=None, section=None, field=None, q=None, sort="id") -> Iterator[sqlite3.Row]:

@@ -126,6 +126,9 @@ rps_tools/
 │   ├── diagnose/       原 tools/diagnose
 │   └── web/  app.py  static/{index.html, app.js, app.css}
 ├── tests/                                pytest：对比算法 + 端到端 HTTP
+├── scripts/privacy_check.py              提交前数据隐私检查（pre-commit 钩子）
+├── .claude/agents/                       4 个角色定义（领域专家 / 架构师 / 回归测试 / 代码审查）
+├── private/                              本地专用：回归基线、敏感词缓存（不进仓库）
 ├── experiments/                          本地实验数据（不进仓库，见下方「数据隐私」）
 ├── export/                               本地 rps_solver 导出数据（不进仓库）
 └── workspace/                            任务产物（可随时删除）
@@ -153,6 +156,19 @@ rps_tools/
 - 通过 HTTP 跑通三类工具（`experiments/`、`export/` 有本地数据时自动使用，没有就跳过这几项）
 - 工作进程报错时能正确回报
 
+### 本地真实数据回归
+
+真实数据不进仓库，所以「改完以后结果有没有悄悄变了」靠本地回归来保证。基线保存在 `private/regress/`（已忽略）：
+
+```bash
+python -m rps_tools regress list        # 自动发现的用例：experiments/ 每个完整实验、export/ 的场景对比等
+python -m rps_tools regress snapshot    # 改算法之前：用当前代码生成基线
+python -m rps_tools regress check       # 改完之后：重新跑一遍，与基线逐文件对比
+```
+
+`report.json` 用 JSON 结构化对比（列表按主键匹配），其余 `.md/.txt/.csv/.mmd` 用文本对比。每个用例在子进程里跑并固定 `PYTHONHASHSEED`，输出顺序是稳定的。
+有差异时退出码为 1，详情写在 `private/regress/last_check.md`。确认差异都是预期内的改进后，再 `snapshot` 更新基线。
+
 ## 数据隐私
 
 仓库是公开的，**任何求解数据和由数据生成的产物都不能提交**。`.gitignore` 做了三层防护：
@@ -162,7 +178,42 @@ rps_tools/
    项目自身需要的少数文件单独白名单（`requirements.txt`、`web/static/index.html`、脱敏后的 `sample_patch.json`）；
 3. 含真实案例的内部文档只留本地。
 
-提交前可以用 `git status --ignored` 自查。**不要**用 `git add -f` 强制添加数据文件；代码、注释、测试里的示例请用 `MAT-A`、`U1` 这类虚构代码。
+另外有一个**提交前自动检查**（pre-commit 钩子），clone 之后先装上：
+
+```bash
+python scripts/privacy_check.py --install
+```
+
+每次 `git commit` 都会检查暂存区，命中任意一项就拦下提交：
+
+- 数据目录、数据类型文件（包括 `git add -f` 强制加的）、超过 1 MB 的文件
+- 只留本地的内部文档
+- **本地数据里出现过的真实物料/装置代码和 OBJ 等数值**：从 `experiments/`、`export/` 自动提取，缓存在 `private/`
+- 本机用户目录路径、QQ 邮箱，以及非 GitHub noreply 的提交邮箱
+
+如果命中的是通用词（比如 SUL、DEN 这类性质代码），把它加进 `scripts/privacy_allowlist.txt`。也可以手动跑 `python scripts/privacy_check.py --all` 检查所有已跟踪文件。
+代码、注释、测试里的示例一律用 `MAT-A`、`U1` 这类虚构代码。
+
+## 角色分工（Claude Code 子代理）
+
+`.claude/agents/` 下定义了 4 个角色，在 Claude Code 里按名字调用，或者由主会话按描述自动分派：
+
+| 角色 | 什么时候用 | 产出 | 权限 |
+|---|---|---|---|
+| `domain-expert` 领域专家 | 改了诊断/归因算法，或对报告结论有疑问 | 逐条判定「成立 / 存疑 / 不成立」，附理论依据和验证方法 | 只读 |
+| `architect` 架构师 | 加新功能或做大重构之前 | 落在现有扩展点上的设计方案、改动步骤、测试计划 | 只读 |
+| `regression-tester` 回归测试 | 改完、提交之前 | pytest 和 `regress check` 结果，判断每处差异是预期改进还是回退；用合成数据补测试 | 可运行命令，只写 `tests/` |
+| `code-reviewer` 代码审查 | 提交之前 | 按严重程度排序的问题清单 | 只读 |
+
+开发由主会话完成，需求和优先级由使用者自己定。推荐流程：
+
+```
+需求 → architect 出方案（大改动才需要）→ 开发
+     → regression-tester（pytest + regress check）→ domain-expert（算法改动时）
+     → code-reviewer → pre-commit 隐私检查 → 提交
+```
+
+小改动直接走「开发 → 测试 → 审查」。
 
 ## 数据来源
 

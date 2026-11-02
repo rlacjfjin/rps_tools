@@ -8,34 +8,16 @@ sys.path.insert(0, str(ROOT))
 
 from rps_tools.core.resultdb import DiffSink, DiffStore  # noqa: E402
 from rps_tools.diff import COMPARATORS  # noqa: E402
+from rps_tools.regress import find_experiments, find_export_pairs  # noqa: E402,F401
 
 
 def find_experiment():
-    """experiments/ 下 patch.json 引用的 4 个文件都在的实验目录，取数据量最小的一个；没有返回 None。
+    """数据量最小的完整本地实验；没有返回 None。
 
     数据目录不进仓库，所以依赖真实数据的测试在干净 clone 上会自动跳过。
     """
-    import json
-    found = []
-    for patch in (ROOT / "experiments").glob("*/patch.json"):
-        try:
-            files = json.loads(patch.read_text(encoding="utf-8")).get("files", {})
-            paths = [patch.parent / v for v in files.values()]
-        except (ValueError, OSError):
-            continue
-        if len(paths) == 4 and all(p.is_file() for p in paths):
-            found.append((sum(p.stat().st_size for p in paths), patch.parent))
-    return min(found)[1] if found else None
-
-
-def find_export_pairs():
-    """export/ 里成对的 (input, output)：output 文件名里的 output 换成 input 即为对应的 input。"""
-    pairs = []
-    for out in sorted((ROOT / "export").glob("*output*.json")):
-        inp = out.with_name(out.name.replace("output", "input"))
-        if inp.is_file():
-            pairs.append((inp, out))
-    return pairs
+    found = find_experiments()
+    return found[0] if found else None
 
 
 @pytest.fixture
