@@ -29,9 +29,9 @@ ROOT = Path(__file__).resolve().parent.parent
 ALLOWLIST = ROOT / "scripts" / "privacy_allowlist.txt"
 TERMS_CACHE = ROOT / "private" / "privacy_terms.txt"
 
-DATA_DIRS = ("experiments/", "export/", "workspace/", "private/")
+DATA_DIRS = ("experiments/", "export/", "workspace/", "private/", "pims-results/")
 DATA_SUFFIXES = {".json", ".jsonl", ".mps", ".xmps", ".freemps", ".lp", ".txt", ".log", ".csv", ".tsv",
-                 ".xls", ".xlsx", ".mmd", ".html", ".jsx", ".sqlite", ".sqlite3", ".db", ".parquet",
+                 ".xls", ".xlsx", ".mmd", ".html", ".htm", ".jsx", ".sqlite", ".sqlite3", ".db", ".parquet",
                  ".pkl", ".npy", ".npz", ".zip", ".7z", ".rar", ".tar", ".tgz", ".gz", ".pptx", ".docx", ".pdf"}
 ALLOWED_FILES = {"requirements.txt", "rps_tools/web/static/index.html",
                  "rps_tools/exp_analyzer/sample_patch.json", "scripts/privacy_allowlist.txt",

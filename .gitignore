@@ -9,6 +9,8 @@ export/*
 !export/README.md
 workspace/
 private/
+# Aspen PIMS 导出的解报告（FullSolution*.htm）
+pims-results/
 
 # 含真实案例（物料/装置代码、经济数值）的内部文档：只留本地
 rps_tools/diagnose/CAPABILITIES.md
@@ -31,6 +33,7 @@ rps_tools/exp_analyzer/TRIAGE.md
 *.xlsx
 *.mmd
 *.html
+*.htm
 *.jsx
 *.sqlite
 *.sqlite3

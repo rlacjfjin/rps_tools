@@ -4,7 +4,7 @@
 
 | # | 功能 | 回答的问题 | 代码 |
 |---|---|---|---|
-| 1 | **文件差异对比** | 两份 JSON / 文本 / MPS 到底哪里不一样 | `rps_tools/diff/` |
+| 1 | **文件差异对比** | 两份 JSON / 文本 / MPS / Aspen PIMS 解报告到底哪里不一样 | `rps_tools/diff/` |
 | 2 | **实验级因果链分析** | 改了 A，OBJ 变化的因果链路是什么 | `rps_tools/exp_analyzer/` |
 | 3 | **物料 / 约束级诊断** | 为什么 X 物料被甩货 / 锁 0 / 凭空消耗；两次场景差在哪 | `rps_tools/diagnose/` |
 
@@ -36,11 +36,27 @@ python -m venv .venv
 python -m rps_tools tools                       # 列出所有工具
 python -m rps_tools tools diff.compare          # 看某个工具的全部参数
 python -m rps_tools diff A.json B.json json.abs_tol=1e-6 --csv diff.csv
+python -m rps_tools diff FullSolution_A.htm FullSolution_B.htm   # PIMS 解报告，产物里另有 summary.md
 python -m rps_tools run exp.analyze exp_dir=experiments/<实验名>
 python -m rps_tools run diagnose.material_trace material=<物料code> export_dir=../rps_solver/export
 ```
 
 原来的入口仍然可用：`python -m rps_tools.exp_analyzer <dir>`、`python -m rps_tools.diagnose.scan_export --export-dir export` 等。
+
+### Aspen PIMS 解报告对比
+
+在「文件差异对比」里选两份 PIMS 导出的 `FullSolution*.htm`（文件名含 FullSolution 时自动识别，也可以手动选「Aspen PIMS 解报告对比」）。结果页有两部分：
+
+- **分析摘要**（`summary.md`）：解读提示、概览（模型 / Case / 目标函数）、经济汇总、输入参数核对（两边都有的行里上下限 / 价格是否一致）、采购 / 销售 / 公用工程变化、装置启停与进料变化、约束紧松变化（新卡住 / 不再卡住 / 边际值变化）、调合配方、装置负荷、报告定义差异（行描述、子段标题、能力罚项 `*` 标记、只在一侧出现的物性列）。
+- **逐单元格差异**：路径是 `报告/子段/表/行代码/列`，可以按报告、列名筛选，也能导出 CSV。
+
+匹配规则：
+
+- 行按代码匹配，不看描述和行顺序，也不受分页影响（宽矩阵同一行分在几张表里也能对上）。描述的变化单独记在「(描述)」里。
+- 空白和 0 视为相同。同一个数两边显示的小数位数不同（5.12 和 5.116）时，按较粗的精度比较。
+- 红色标记（`*` 表示递推物性或能力罚项，`+` 表示 PCALC）和数值分开存。
+
+13 MB 的报告解析一份大约 6 秒。
 
 ---
 
@@ -122,6 +138,7 @@ rps_tools/
 │   ├── config.py                         工作目录 / 数据目录 / 路径访问控制
 │   ├── core/  tooling.py jobs.py resultdb.py fileio.py
 │   ├── diff/  base.py json_cmp.py text_cmp.py mps_cmp.py tool.py
+│   │          pims_report.py（PIMS htm 解析）pims_cmp.py（对比器）pims_summary.py（分析摘要）
 │   ├── exp_analyzer/   原 tools/exp_analyzer
 │   ├── diagnose/       原 tools/diagnose
 │   └── web/  app.py  static/{index.html, app.js, app.css}
@@ -131,6 +148,7 @@ rps_tools/
 ├── private/                              本地专用：回归基线、敏感词缓存（不进仓库）
 ├── experiments/                          本地实验数据（不进仓库，见下方「数据隐私」）
 ├── export/                               本地 rps_solver 导出数据（不进仓库）
+├── pims-results/                         本地 Aspen PIMS 解报告 FullSolution*.htm（不进仓库）
 └── workspace/                            任务产物（可随时删除）
 ```
 
@@ -153,6 +171,7 @@ rps_tools/
 - JSON 主键匹配、容差、忽略规则、重复元素
 - 文本对比在大文件和高度重复内容上的精度与速度
 - MPS 结构化对比
+- PIMS 解报告对比：两行表头、红色标记、分页宽矩阵、按代码匹配、分析摘要（合成报告；`pims-results/` 有真实报告时再跑一遍冒烟）
 - 通过 HTTP 跑通三类工具（`experiments/`、`export/` 有本地数据时自动使用，没有就跳过这几项）
 - 工作进程报错时能正确回报
 
@@ -173,8 +192,8 @@ python -m rps_tools regress check       # 改完之后：重新跑一遍，与�
 
 仓库是公开的，**任何求解数据和由数据生成的产物都不能提交**。`.gitignore` 做了三层防护：
 
-1. `experiments/`、`export/`、`workspace/`、`private/` 整目录忽略（只保留目录说明 README）；
-2. 全局按扩展名兜底：`*.json` `*.mps` `*.xmps` `*.lp` `*.txt` `*.csv` `*.xlsx` `*.html` `*.mmd` `*.sqlite` 等，放错目录也不会被提交；
+1. `experiments/`、`export/`、`pims-results/`、`workspace/`、`private/` 整目录忽略（只保留目录说明 README）；
+2. 全局按扩展名兜底：`*.json` `*.mps` `*.xmps` `*.lp` `*.txt` `*.csv` `*.xlsx` `*.html` `*.htm` `*.mmd` `*.sqlite` 等，放错目录也不会被提交；
    项目自身需要的少数文件单独白名单（`requirements.txt`、`web/static/index.html`、脱敏后的 `sample_patch.json`）；
 3. 含真实案例的内部文档只留本地。
 

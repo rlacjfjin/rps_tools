@@ -2,4 +2,5 @@
 from rps_tools.diff import json_cmp  # noqa: F401
 from rps_tools.diff import text_cmp  # noqa: F401
 from rps_tools.diff import mps_cmp  # noqa: F401
+from rps_tools.diff import pims_cmp  # noqa: F401
 from rps_tools.diff.base import COMPARATORS, detect_format  # noqa: F401

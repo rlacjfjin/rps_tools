@@ -670,7 +670,8 @@ async function renderDiffResult(box, job, qs) {
   const statLine = isText
     ? `旧文件 ${(stats.lines_a ?? 0).toLocaleString()} 行 / 新文件 ${(stats.lines_b ?? 0).toLocaleString()} 行` + (stats.ignored_within_tolerance ? `，容差内忽略 ${stats.ignored_within_tolerance} 行` : "")
     : r.format === "json" ? `比较节点 ${(stats.nodes_compared ?? 0).toLocaleString()} 个`
-      : r.format === "mps" ? `A: ${stats.a?.rows} 行 / ${stats.a?.columns} 列 / ${stats.a?.nonzeros} 非零；B: ${stats.b?.rows} / ${stats.b?.columns} / ${stats.b?.nonzeros}` : "";
+      : r.format === "mps" ? `A: ${stats.a?.rows} 行 / ${stats.a?.columns} 列 / ${stats.a?.nonzeros} 非零；B: ${stats.b?.rows} / ${stats.b?.columns} / ${stats.b?.nonzeros}`
+        : r.format === "pims" ? `目标函数 A ${fmtNum(stats.a?.objective)} → B ${fmtNum(stats.b?.objective)}；单元格 A ${(stats.a?.cells ?? 0).toLocaleString()} / B ${(stats.b?.cells ?? 0).toLocaleString()}` : "";
   const chips = h("div", { class: "stats" });
   const drawChips = () => chips.replaceChildren(
     h("div", { class: "stat click" + (!st.kind ? " on" : ""), onclick: () => { st.kind = ""; st.offset = 0; reload(); } }, h("div", { class: "v" }, (r.total ?? 0).toLocaleString()), h("div", { class: "k" }, "全部差异")),
@@ -684,6 +685,16 @@ async function renderDiffResult(box, job, qs) {
     r.total === 0 ? h("div", { class: "alert info" }, "两份文件没有差异（在当前忽略规则 / 容差下）。") : null,
     r.truncated ? h("div", { class: "alert warn" }, `差异共 ${r.total.toLocaleString()} 条，只保存了前 ${r.stored.toLocaleString()} 条明细（统计数字是完整的）。可在高级选项里调大「最多保存差异条数」，或增加忽略规则。`) : null,
     chips));
+  // 对比器生成的分析摘要（例如 PIMS 解报告对比的 summary.md）
+  if (r.summary) {
+    const md = h("div", { class: "md" }, h("div", { class: "muted" }, "加载分析摘要…"));
+    box.append(h("details", { class: "card", open: true },
+      h("summary", { style: "cursor:pointer;font-weight:600" }, "分析摘要",
+        h("a", { class: "btn sm", style: "margin-left:12px", href: `/api/jobs/${job.id}/files/${r.summary}?download=1` }, "下载 " + r.summary)),
+      md));
+    try { md.innerHTML = await api(`/api/jobs/${job.id}/markdown/${r.summary}`); }
+    catch (e) { md.replaceChildren(h("div", { class: "alert warn" }, "摘要渲染失败：" + e.message)); }
+  }
   if (r.total === 0) return;
 
   // 维度分布（JSON / MPS）
@@ -695,7 +706,7 @@ async function renderDiffResult(box, job, qs) {
       Object.entries(data).map(([name, n]) => h("a", { href: "javascript:void 0", class: st[key] === name ? "on" : "", onclick: () => { st[key] = st[key] === name ? "" : name; st.offset = 0; reload(); } },
         h("span", { title: name }, name), h("span", { class: "muted" }, n.toLocaleString()))));
     facetBox.replaceChildren(
-      Object.keys(r.by_section || {}).length ? facet(r.format === "mps" ? "按段 (section)" : "按顶层块", r.by_section, "section", r.n_sections) : "",
+      Object.keys(r.by_section || {}).length ? facet(r.format === "mps" ? "按段 (section)" : r.format === "pims" ? "按报告" : "按顶层块", r.by_section, "section", r.n_sections) : "",
       Object.keys(r.by_field || {}).length ? facet("按字段名", r.by_field, "field", r.n_fields) : "",
     );
   };

@@ -10,6 +10,7 @@ from rps_tools.core.tooling import JobContext, Param, ParamError, Tool, register
 from rps_tools.diff import COMPARATORS, detect_format
 
 DB_NAME = "diff.sqlite"
+SUMMARY_NAME = "summary.md"
 
 
 def _params() -> list[Param]:
@@ -59,6 +60,12 @@ def run(ctx: JobContext, p: dict) -> dict:
     print(f"完成：差异 {summary['total']:,} 条，用时 {seconds:.1f}s")
     for kind, n in summary["by_kind"].items():
         print(f"  {kind}: {n:,}")
+    # 对比器可以额外返回一份 Markdown 分析摘要（stats["summary_md"]），结果页显示在差异表上方
+    summary_md = stats.pop("summary_md", None)
+    if summary_md:
+        (ctx.out_dir / SUMMARY_NAME).write_text(summary_md, encoding="utf-8")
+        summary["summary"] = SUMMARY_NAME
+        print(f"分析摘要: {SUMMARY_NAME}")
     return {
         "format": fmt,
         "format_title": cmp.title,
@@ -75,7 +82,8 @@ register(Tool(
     id="diff.compare",
     group="diff",
     title="文件差异对比",
-    description="上传或选择两份文件。JSON 按结构对比（列表按 code 等主键匹配），文本按行对比，MPS 按矩阵元素对比。",
+    description="上传或选择两份文件。JSON 按结构对比（列表按 code 等主键匹配），文本按行对比，MPS 按矩阵元素对比，"
+                "Aspen PIMS 解报告（FullSolution*.htm）按报告单元格对比并生成分析摘要。",
     params=_params(),
     run=run,
     view="diff",

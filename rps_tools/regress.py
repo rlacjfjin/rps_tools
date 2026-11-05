@@ -10,6 +10,7 @@
   diagnose.compare_scenarios    export/ 中前两组 (input, output)
   diagnose.scan_export          export/ 中每个 *proto_expression*.txt（配同名前缀的 input/output）
   diagnose.parse_expressions    同上
+  diff.compare (pims)           pims-results/ 中按文件名排序的前两份 *.htm（比较 summary.md）
 对比方式：*.json 用 JSON 结构化对比（列表按主键匹配），其余 .md/.txt/.csv/.mmd 用文本对比。
 每个用例在独立子进程里跑，并固定 PYTHONHASHSEED，保证集合遍历顺序稳定、文本输出可比。
 """
@@ -66,6 +67,12 @@ def find_export_pairs() -> list[tuple[Path, Path]]:
     return pairs
 
 
+def find_pims_pair() -> tuple[Path, Path] | None:
+    """pims-results/ 里按文件名排序的前两份 PIMS 解报告（*.htm）。"""
+    files = sorted((ROOT / "pims-results").glob("*.htm"))
+    return (files[0], files[1]) if len(files) >= 2 else None
+
+
 def find_proto_sets() -> list[tuple[Path, Path | None, Path | None]]:
     """export/ 里的 proto_expression.txt，以及同前缀的 model_input / model_output（可能缺）。"""
     out = []
@@ -93,6 +100,10 @@ def discover() -> list[Case]:
         if inp and outp:
             cases.append(Case(f"scan-{_slug(proto.stem)}", "diagnose.scan_export",
                               {"proto": str(proto), "input": str(inp), "output": str(outp)}))
+    pims = find_pims_pair()
+    if pims:   # 产物里只有 summary.md 参与对比（diff.sqlite 不比）
+        cases.append(Case(f"pims-{_slug(pims[0].stem)}--{_slug(pims[1].stem)}", "diff.compare",
+                          {"file_a": str(pims[0]), "file_b": str(pims[1]), "format": "pims"}))
     return cases
 
 
@@ -175,10 +186,18 @@ def cmd_snapshot(args) -> int:
         if not ok:
             failed += 1
             print("      " + tail.replace("\n", "\n      "))
-    manifest = {"created": datetime.now().isoformat(timespec="seconds"), "git": _git_head(),
-                "cases": [c.__dict__ for c in cases]}
+    manifest_path = REGRESS_DIR / "baseline" / "manifest.json"
+    all_cases = [c.__dict__ for c in cases]
+    if args.only and manifest_path.is_file():   # 只更新部分用例时保留其它用例的记录
+        try:
+            names = {c.name for c in cases}
+            old = json.loads(manifest_path.read_text(encoding="utf-8")).get("cases", [])
+            all_cases = [c for c in old if c.get("name") not in names] + all_cases
+        except ValueError:
+            pass
+    manifest = {"created": datetime.now().isoformat(timespec="seconds"), "git": _git_head(), "cases": all_cases}
     (REGRESS_DIR / "baseline").mkdir(parents=True, exist_ok=True)
-    (REGRESS_DIR / "baseline" / "manifest.json").write_text(
+    manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"\n基线已保存到 {REGRESS_DIR / 'baseline'}（git {manifest['git'] or '-'}）")
     return 1 if failed else 0

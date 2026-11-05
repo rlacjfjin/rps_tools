@@ -16,7 +16,7 @@ from typing import Any, Callable
 # 三条功能线（Web 首页的三张卡片 / 顶部导航）
 GROUPS = [
     {"id": "diff", "title": "文件差异对比",
-     "description": "两份文件逐项对比：JSON 结构化（按主键匹配列表）、文本按行、MPS 按矩阵元素。大文件后台执行，结果分页查询。"},
+     "description": "两份文件逐项对比：JSON 结构化（按主键匹配列表）、文本按行、MPS 按矩阵元素、Aspen PIMS 解报告（含分析摘要）。大文件后台执行，结果分页查询。"},
     {"id": "exp", "title": "实验级因果链分析",
      "description": "baseline vs modified 两次求解结果：回答「改了 A，OBJ 变化的因果链路是什么」。输出 R1-R13 报告 + 因果图。"},
     {"id": "diagnose", "title": "物料 / 约束级诊断",
