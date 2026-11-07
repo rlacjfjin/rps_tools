@@ -27,6 +27,7 @@ TOOL_MODULES = (
     "rps_tools.diff.tool",
     "rps_tools.exp_analyzer.tool",
     "rps_tools.diagnose.tool",
+    "rps_tools.diagnose.infeasibility.tool",
 )
 
 PARAM_TYPES = {"file", "dir", "str", "text", "int", "float", "bool", "choice", "multi"}

@@ -21,11 +21,22 @@ dev = ["pytest>=8", "httpx>=0.27", "orjson>=3.9"]
 [project.scripts]
 rps-tools = "rps_tools.cli:main"
 
+[tool.setuptools]
+include-package-data = false
+
 [tool.setuptools.packages.find]
 include = ["rps_tools*"]
 
 [tool.setuptools.package-data]
-rps_tools = ["web/static/*", "**/*.md", "**/*.json"]
+# Explicit public resources only. Ignored local case notes must not enter wheels.
+rps_tools = [
+    "web/static/index.html",
+    "web/static/app.js",
+    "web/static/app.css",
+    "exp_analyzer/README.md",
+    "exp_analyzer/sample_patch.json",
+    "diagnose/infeasibility/README.md",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,0 +1,4 @@
+interface:
+  display_name: "RPS Offline Diagnosis"
+  short_description: "Trace RPS conflicts and property bounds from saved evidence"
+  default_prompt: "Use $rps-input-diagnosis to explain this RPS case using the offline tools and distinguish proven conflicts from clues."

@@ -26,9 +26,22 @@ python -m venv .venv
 
 浏览器打开 http://127.0.0.1:8765 。在 Windows 上也可以直接双击 `start_server.bat`，第一次运行会自动建好 `.venv`。
 
+启动脚本每次都会核对 `requirements.txt`，补齐缺失或不满足版本要求的运行依赖；已满足的包不强制升级。安装失败时停止启动并返回非零退出码。
+
 - **局域网共享**：加上 `--host 0.0.0.0`。这时「服务器路径」只能读数据目录（experiments/、export/、../rps_solver/export、`--data-root` 指定的目录），不能读整台机器。
 - **接口文档**：http://127.0.0.1:8765/docs ，可以直接在网页里调接口。
 - **任务产物**：放在 `workspace/jobs/<任务ID>/`，默认保留 14 天（`--retention-days` 可调）。
+
+### 运行依赖与部署
+
+- 直接运行依赖只有 FastAPI、Uvicorn、python-multipart、Markdown，要求 Python 3.10+，它们的依赖由 pip 自动安装。新增诊断工具使用标准库，不需要 LLM/API Key、Redis、SLP、IPOPT、Gurobi、NumPy、Pandas 或 SciPy。
+- `orjson` 是可选加速库，未安装时自动使用标准库 JSON。需要时在运行服务的 Python 环境执行 `python -m pip install "orjson>=3.9"`。
+- `requirements.txt` 只用于运行部署；测试和开发环境在同一虚拟环境执行 `python -m pip install -e ".[dev]"`，再运行 pytest。
+- 源码部署需要同步 `rps_tools/`、`requirements.txt`、`start_server.bat`（或 `run_server.py`），升级后重启服务。`.agents/skills/` 可随源码提供给 LLM/人工参考，不是程序运行依赖；`private/` 不用于公开分发。
+- wheel 包包含诊断模块、网页静态文件和公开说明，按明确清单打包，排除内部案例文档。安装 wheel 后通过 `rps-tools serve` 启动，使用 `--workspace` 指定可写产物目录、`--data-root` 指定本地数据目录。仓库 skill 单独随源码提供。
+- 离线服务器需事先准备对应 Python/平台的依赖 wheel，配置 `PIP_NO_INDEX=1` 与 `PIP_FIND_LINKS=<wheel目录>` 后使用原启动脚本。运行时不需要联网调用 LLM。
+
+当前仓库提供 Windows 启动脚本和 Python 启动入口，没有单独的 Docker/Kubernetes 部署脚本；这次诊断迁移不要求增加这类服务。
 
 ### 命令行（和 Web 用的是同一份实现）
 
@@ -42,6 +55,18 @@ python -m rps_tools run diagnose.material_trace material=<物料code> export_dir
 ```
 
 原来的入口仍然可用：`python -m rps_tools.exp_analyzer <dir>`、`python -m rps_tools.diagnose.scan_export --export-dir export` 等。
+
+### 入参冲突、失败约束和性质卡边
+
+“物料 / 约束级诊断”新增三个只读工具：`diagnose.input_feasibility`、`diagnose.failure_analysis`、`diagnose.property_bounds`。分别检查入参线索、解释已有失败证据、展示成功结果的性质卡边。它们不调用求解器，不改变原始状态；缺少可靠证据时说明信息不足。
+
+```bash
+python -m rps_tools run diagnose.input_feasibility input=input.json
+python -m rps_tools run diagnose.failure_analysis input=input.json output=output.json
+python -m rps_tools run diagnose.property_bounds input=input.json output=output.json
+```
+
+输入文件应来自同一次运行，可通过 `manifest` 核对 SHA256。详细文件契约与边界见 [诊断模块说明](rps_tools/diagnose/infeasibility/README.md)；仓库 skill 位于 [.agents/skills/rps-input-diagnosis/SKILL.md](.agents/skills/rps-input-diagnosis/SKILL.md)。真实案例经验仍只保存在本地 `private/diagnosis_migration/`。
 
 ### Aspen PIMS 解报告对比
 
@@ -163,6 +188,7 @@ rps_tools/
 ## 测试
 
 ```bash
+.venv\Scripts\python -m pip install -e ".[dev]"
 .venv\Scripts\python -m pytest -q
 ```
 

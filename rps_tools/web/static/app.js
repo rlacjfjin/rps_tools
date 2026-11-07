@@ -579,10 +579,15 @@ async function renderReportResult(box, job) {
   const r = job.result || {};
   const kpis = r.kpis || {};
   const kpiRows = Object.entries(kpis);
+  const metricRows = Object.entries(r.metrics || {});
   box.append(h("div", { class: "card" },
     h("h2", {}, r.experiment_name || "分析结果"),
     r.description ? h("p", { class: "muted" }, r.description) : null,
     r.entry_point ? h("p", { class: "small" }, `入口：${r.entry_point.type || ""} `, h("code", {}, r.entry_point.code || ""), `，方向 ${r.entry_point.direction || ""}`) : null,
+    metricRows.length ? h("div", { class: "tablewrap", style: "margin:12px 0" }, h("table", {},
+      h("thead", {}, h("tr", {}, h("th", {}, "诊断项"), h("th", {}, "数量"))),
+      h("tbody", {}, metricRows.map(([k, v]) => h("tr", {}, h("td", {}, k),
+        h("td", { class: "num" }, fmtNum(v))))))) : null,
     kpiRows.length ? h("div", { class: "tablewrap", style: "margin:12px 0" }, h("table", {},
       h("thead", {}, h("tr", {}, ["KPI", "baseline", "modified", "Δ", "Δ%"].map((t) => h("th", {}, t)))),
       h("tbody", {}, kpiRows.map(([k, v]) => h("tr", {},
@@ -594,7 +599,7 @@ async function renderReportResult(box, job) {
       ["critical_path.html", "critical_path 关键路径"], ["chain_graph.html", "chain_graph 完整邻域"],
       ["report.md", "report.md"], ["report.json", "report.json"], ["obj_contributions.csv", "R2 obj_contributions.csv"],
       ["block_activation.csv", "R5 block_activation.csv"], ["patch.json", "patch.json"]]),
-    h("p", { class: "muted small" }, "因果图使用 CDN 加载 mermaid，需要能访问外网。")));
+    job.group === "exp" ? h("p", { class: "muted small" }, "因果图使用 CDN 加载 mermaid，需要能访问外网。") : null));
   const md = h("div", { class: "card md" }, h("div", { class: "muted" }, "加载报告…"));
   box.append(md);
   try { md.innerHTML = await api(`/api/jobs/${job.id}/markdown/report.md`); }
