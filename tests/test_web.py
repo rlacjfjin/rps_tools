@@ -1,5 +1,6 @@
 """端到端：起一个真实的 FastAPI 应用（含后台工作进程），走 HTTP 提交 / 轮询 / 查询。"""
 import json
+import sqlite3
 import time
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from conftest import find_experiment, find_export_pairs
 from rps_tools.config import ROOT, Settings
+from rps_tools.core.resultdb import MISSING, DiffSink, DiffStore, export_item, raw_json
 from rps_tools.web.app import create_app
 
 # 依赖本地真实数据的用例：数据目录不进仓库，干净 clone 上会自动跳过
@@ -56,6 +58,61 @@ def test_diff_upload_and_query(client):
     assert "materialList[code=B]/v" in csv and csv.startswith("﻿")
     log = client.get(f"/api/jobs/{job['id']}/log").json()
     assert "对比方式" in log["text"]
+
+
+def test_diff_export_json_keeps_full_values(client):
+    a = {"rows": [{"code": "A", "text": "x" * 500, "v": 1, "flag": None}], "gone": {"k": 1}}
+    b = {"rows": [{"code": "A", "text": "y" * 500, "v": 2.5, "flag": True}], "fresh": [1, 2]}
+    r = client.post("/api/tools/diff.compare/jobs",
+                    files={"file_a": ("a.json", json.dumps(a)), "file_b": ("b.json", json.dumps(b))},
+                    data={"format": "json"})
+    job = wait(client, r.json()["id"])
+    assert job["status"] == "succeeded", job
+
+    resp = client.get(f"/api/jobs/{job['id']}/diff/export.json")
+    assert resp.headers["content-type"].startswith("application/json")
+    assert f'filename="diff_{job["id"]}.json"' in resp.headers["content-disposition"]
+    data = resp.json()
+    assert (data["file_a"], data["file_b"], data["format"]) == ("a.json", "b.json", "json")
+    assert (data["total"], data["exported"], data["truncated"], data["complete_values"]) == (5, 5, False, True)
+    by_path = {d["path"]: d for d in data["diffs"]}
+    assert by_path["rows[code=A]/text"]["new"] == "y" * 500
+    assert by_path["rows[code=A]/v"]["old"] == 1 and by_path["rows[code=A]/v"]["new"] == 2.5
+    assert by_path["rows[code=A]/v"]["delta"] == 1.5
+    assert by_path["rows[code=A]/flag"]["old"] is None and by_path["rows[code=A]/flag"]["new"] is True
+    assert by_path["gone"]["old"] == {"k": 1} and "new" not in by_path["gone"]
+    assert by_path["fresh"]["new"] == [1, 2] and "old" not in by_path["fresh"]
+
+    filtered = client.get(f"/api/jobs/{job['id']}/diff/export.json", params={"field": "v"}).json()
+    assert filtered["filters"] == {"field": "v"} and filtered["exported"] == 1
+    assert [d["path"] for d in filtered["diffs"]] == ["rows[code=A]/v"]
+
+    page = client.get(f"/api/jobs/{job['id']}/diff/items").json()["items"]
+    assert all("old_json" not in it and "new_json" not in it for it in page)   # 分页接口不带完整大对象
+    assert max(len(it["new"] or "") for it in page) < 500
+
+
+def test_export_item_falls_back_on_jobs_without_full_values(tmp_path):
+    db = tmp_path / "old.sqlite"
+    sink = DiffSink(db)
+    sink.add("changed", "a/v", 1, 2, section="a", field="v")
+    sink.add("added", "a/w", MISSING, "x", section="a", field="w")
+    sink.close()
+    conn = sqlite3.connect(db)
+    conn.execute("ALTER TABLE items DROP COLUMN old_json")
+    conn.execute("ALTER TABLE items DROP COLUMN new_json")
+    conn.commit()
+    conn.close()
+    store = DiffStore(db)
+    assert store.has_full_values() is False
+    items = [json.loads(export_item(r)) for r in store.iter_rows(full=True)]
+    assert (items[0]["old"], items[0]["new"]) == ("1", "2")   # 旧库只有展示文本
+    assert items[1]["new"] == "x" and "old" not in items[1]
+
+
+def test_raw_json_nan_is_valid_json():
+    assert json.loads(raw_json(float("nan"))) == "nan"
+    assert raw_json(MISSING) is None
 
 
 def test_missing_required_param_is_400(client):

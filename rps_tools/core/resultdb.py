@@ -4,7 +4,8 @@
 差异一多（几十万条）内存和响应时间都会爆。这里改成：
   * 对比器每产生一条差异就 sink.add()，按批 executemany 落盘，内存只保留一个批次；
   * 计数（按类型 / 按顶层 section / 按字段名）在写入时累计，超过 max_items 后只计数不落盘；
-  * 读取端按 offset/limit + WHERE 查询，导出 CSV 用游标流式输出。
+  * 读取端按 offset/limit + WHERE 查询，导出 CSV / JSON 用游标流式输出；
+  * old/new 是截断后的展示文本，old_json/new_json 存完整原始值（JSON 文本），只有导出 JSON 时才读取。
 """
 from __future__ import annotations
 
@@ -26,6 +27,9 @@ KIND_LABELS = {
 
 _COLUMNS = ("kind", "path", "section", "field", "old", "new", "delta", "absdelta", "rel",
             "line_a", "line_b", "note")
+_RAW_COLUMNS = ("old_json", "new_json")
+_INSERT_COLUMNS = _COLUMNS + _RAW_COLUMNS
+_PREVIEW_SELECT = ",".join(("id",) + _COLUMNS)   # 分页和 CSV 只读展示列，避免把完整大对象读进来
 
 _SCHEMA = """
 CREATE TABLE items (
@@ -41,7 +45,9 @@ CREATE TABLE items (
     rel REAL,
     line_a INTEGER,
     line_b INTEGER,
-    note TEXT
+    note TEXT,
+    old_json TEXT,
+    new_json TEXT
 );
 """
 
@@ -70,6 +76,30 @@ def preview(v, limit: int) -> str | None:
     if len(s) > limit:
         s = s[:limit] + f"…(共 {len(s)} 字符)"
     return s
+
+
+def raw_json(v) -> str | None:
+    """完整原始值的 JSON 文本；某一侧不存在时返回 None。NaN/Infinity 不是合法 JSON，转成字符串保存。"""
+    if v is MISSING:
+        return None
+    try:
+        return json.dumps(v, ensure_ascii=False, default=str, allow_nan=False)
+    except ValueError:
+        return json.dumps(str(v), ensure_ascii=False)
+
+
+def export_item(row) -> str:
+    """把一行差异拼成 JSON 对象文本。旧任务的库没有完整值，退回到展示文本；不存在的一侧不输出该键。"""
+    columns = row.keys()
+    dumps = lambda v: json.dumps(v, ensure_ascii=False)   # noqa: E731
+    parts = [f'"{k}":{dumps(row[k])}' for k in ("kind", "path", "section", "field") if row[k] is not None]
+    for side in ("old", "new"):
+        raw = row[f"{side}_json"] if f"{side}_json" in columns else (
+            None if row[side] is None else dumps(row[side]))
+        if raw is not None:
+            parts.append(f'"{side}":{raw}')
+    parts += [f'"{k}":{dumps(row[k])}' for k in ("delta", "rel", "line_a", "line_b", "note") if row[k] is not None]
+    return "{" + ",".join(parts) + "}"
 
 
 class DiffSink:
@@ -114,7 +144,8 @@ class DiffSink:
             scale = max(abs(old), abs(new))
             rel = absdelta / scale if scale else None
         self._batch.append((kind, path, section, field, preview(old, self.preview_len),
-                            preview(new, self.preview_len), delta, absdelta, rel, line_a, line_b, note))
+                            preview(new, self.preview_len), delta, absdelta, rel, line_a, line_b, note,
+                            raw_json(old), raw_json(new)))
         self.stored += 1
         if len(self._batch) >= self.batch_size:
             self._flush()
@@ -122,7 +153,7 @@ class DiffSink:
     def _flush(self) -> None:
         if self._batch:
             self.conn.executemany(
-                f"INSERT INTO items ({','.join(_COLUMNS)}) VALUES ({','.join('?' * len(_COLUMNS))})",
+                f"INSERT INTO items ({','.join(_INSERT_COLUMNS)}) VALUES ({','.join('?' * len(_INSERT_COLUMNS))})",
                 self._batch)
             self._batch.clear()
 
@@ -198,17 +229,27 @@ class DiffStore:
         try:
             total = conn.execute(f"SELECT COUNT(*) FROM items {where}", args).fetchone()[0]
             rows = conn.execute(
-                f"SELECT * FROM items {where} ORDER BY {order} LIMIT ? OFFSET ?",
+                f"SELECT {_PREVIEW_SELECT} FROM items {where} ORDER BY {order} LIMIT ? OFFSET ?",
                 args + [limit, max(0, int(offset))]).fetchall()
         finally:
             conn.close()
         return {"total": total, "offset": offset, "limit": limit, "items": [dict(r) for r in rows]}
 
-    def iter_rows(self, kind=None, section=None, field=None, q=None, sort="id") -> Iterator[sqlite3.Row]:
+    def iter_rows(self, kind=None, section=None, field=None, q=None, sort="id",
+                  full: bool = False) -> Iterator[sqlite3.Row]:
+        """full=True 时带上完整原始值（old_json/new_json，旧任务的库没有这两列）。"""
         where, args = self._where(kind, section, field, q)
         order = SORTS.get(sort, SORTS["id"])
+        columns = "*" if full else _PREVIEW_SELECT
         conn = self._connect()
         try:
-            yield from conn.execute(f"SELECT * FROM items {where} ORDER BY {order}", args)
+            yield from conn.execute(f"SELECT {columns} FROM items {where} ORDER BY {order}", args)
+        finally:
+            conn.close()
+
+    def has_full_values(self) -> bool:
+        conn = self._connect()
+        try:
+            return "old_json" in {r["name"] for r in conn.execute("PRAGMA table_info(items)")}
         finally:
             conn.close()

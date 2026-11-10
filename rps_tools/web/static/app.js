@@ -729,10 +729,11 @@ async function renderDiffResult(box, job, qs) {
     [100, 200, 500, 1000].map((n) => h("option", { value: n, selected: st.limit === n }, `${n} 条/页`)));
   const activeTags = h("span", { class: "row" });
   const exportBtn = h("a", { class: "btn" }, "导出 CSV（当前筛选）");
+  const exportJsonBtn = h("a", { class: "btn", title: "旧值 / 新值不截断，保留原始类型" }, "导出 JSON（当前筛选）");
   const tableBox = h("div");
   const pager = h("div", { class: "pager" });
   box.append(h("div", { class: "card" },
-    h("div", { class: "filters" }, search, sortSel, limitSel, activeTags, h("span", { class: "spacer" }), exportBtn),
+    h("div", { class: "filters" }, search, sortSel, limitSel, activeTags, h("span", { class: "spacer" }), exportBtn, exportJsonBtn),
     tableBox, pager));
 
   function filterQS() {
@@ -746,6 +747,7 @@ async function renderDiffResult(box, job, qs) {
     activeTags.replaceChildren(...["kind", "section", "field"].filter((k) => st[k]).map((k) =>
       h("button", { class: "btn sm", onclick: () => { st[k] = ""; st.offset = 0; reload(); } }, `${{ kind: "类型", section: "顶层", field: "字段" }[k]}: ${k === "kind" ? kindLabel(st[k]) : st[k]} ✕`)));
     exportBtn.href = `/api/jobs/${job.id}/diff/export.csv?` + filterQS();
+    exportJsonBtn.href = `/api/jobs/${job.id}/diff/export.json?` + filterQS();
     const p = filterQS(); p.set("offset", st.offset); p.set("limit", st.limit);
     tableBox.replaceChildren(h("div", { class: "muted" }, "查询中…"));
     const res = await api(`/api/jobs/${job.id}/diff/items?` + p);

@@ -9,12 +9,14 @@
             GET  /api/jobs/{id}/files  产物列表；GET .../files/<path> 下载/预览；GET .../markdown/<path> 渲染
 差异：      GET  /api/jobs/{id}/diff/items       分页 + 筛选查询
             GET  /api/jobs/{id}/diff/export.csv  按当前筛选流式导出
+            GET  /api/jobs/{id}/diff/export.json 按当前筛选流式导出，old/new 是未截断的原始值
 文件浏览：  GET  /api/fs/list?path=   在服务器上选文件（仅限允许的数据目录）
 """
 from __future__ import annotations
 
 import csv
 import io
+import json
 import re
 import shutil
 from contextlib import asynccontextmanager
@@ -29,7 +31,7 @@ from starlette.datastructures import UploadFile
 from rps_tools import __version__
 from rps_tools.config import PathAccessError, Settings
 from rps_tools.core.jobs import FINAL, JobManager
-from rps_tools.core.resultdb import KIND_LABELS, DiffStore
+from rps_tools.core.resultdb import KIND_LABELS, DiffStore, export_item
 from rps_tools.core.tooling import GROUPS, ParamError, all_tools, get_tool
 
 STATIC = Path(__file__).parent / "static"
@@ -265,6 +267,37 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         return StreamingResponse(rows(), media_type="text/csv; charset=utf-8",
                                  headers={"Content-Disposition": f'attachment; filename="diff_{job_id}.csv"'})
+
+    @app.get("/api/jobs/{job_id}/diff/export.json")
+    def diff_export_json(job_id: str, kind: str | None = None, section: str | None = None,
+                         field: str | None = None, q: str | None = None, sort: str = "id"):
+        store = diff_store(job_id)
+        result = manager.get(job_id).result or {}
+        filters = {k: v for k, v in (("kind", kind), ("section", section), ("field", field), ("q", q)) if v}
+        head = {
+            "file_a": (result.get("file_a") or {}).get("name"),
+            "file_b": (result.get("file_b") or {}).get("name"),
+            "format": result.get("format"),
+            "options": result.get("options"),
+            "filters": filters,
+            "total": result.get("total"),
+            "exported": store.query(kind=kind, section=section, field=field, q=q, limit=1)["total"],
+            "truncated": bool(result.get("truncated")),
+            "complete_values": store.has_full_values(),
+        }
+
+        def chunks():
+            yield json.dumps(head, ensure_ascii=False, default=str)[:-1] + ',"diffs":['
+            buf = []
+            for n, r in enumerate(store.iter_rows(kind, section, field, q, sort, full=True)):
+                buf.append(("," if n else "") + "\n" + export_item(r))
+                if len(buf) >= 2000:
+                    yield "".join(buf)
+                    buf.clear()
+            yield "".join(buf) + "\n]}\n"
+
+        return StreamingResponse(chunks(), media_type="application/json; charset=utf-8",
+                                 headers={"Content-Disposition": f'attachment; filename="diff_{job_id}.json"'})
 
     # ------------------------------------------------------------------ file browser
     @app.get("/api/fs/list")
