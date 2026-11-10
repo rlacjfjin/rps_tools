@@ -61,6 +61,67 @@ def test_id_string_lists_are_sets_but_text_lists_are_ordered(tmp_path, run_compa
     assert {r["section"] for r in rows} == {"log"}
 
 
+def test_key_field_with_one_null_is_still_a_key(tmp_path, run_compare):
+    a = {"out": [{"code": None, "ub": None}, {"code": "U1", "ub": 1.0}, {"code": "U2", "ub": 2.0}]}
+    b = {"out": [{"code": "U2", "ub": 3.0}, {"code": None, "ub": None}, {"code": "U1", "ub": 1.0}]}
+    s, rows = run_compare("json", write(tmp_path, "a.json", a), write(tmp_path, "b.json", b))
+    assert [(r["kind"], r["path"]) for r in rows] == [("changed", "out[code=U2]/ub")]
+    assert s["stats"]["list_keys_used"] == {"code": 1}
+
+
+@pytest.mark.parametrize("a_codes, b_codes", [
+    ([None], ["U1"]),                 # 单元素且为 null：不能当主键，否则会变成一删一增
+    ([None, None, "U1"], [None, None, "U2"]),   # 多个 null：不能当主键
+])
+def test_null_heavy_field_is_not_a_key(tmp_path, run_compare, a_codes, b_codes):
+    a = {"out": [{"code": c, "v": i * 1.5} for i, c in enumerate(a_codes)]}
+    b = {"out": [{"code": c, "v": i * 1.5} for i, c in enumerate(b_codes)]}
+    s, rows = run_compare("json", write(tmp_path, "a.json", a), write(tmp_path, "b.json", b))
+    assert s["stats"]["list_keys_used"] == {}
+    assert [r["kind"] for r in rows] == ["changed"] and rows[0]["field"] == "code"
+
+
+def test_unkeyed_objects_with_duplicates_ignore_order(tmp_path, run_compare):
+    a = {"con": [{"input": "M1", "lb": 0.1}, {"input": "M2", "lb": 0.5}, {"input": "M3", "lb": 0.4},
+                 {"input": "M2", "lb": 0.5}, {"input": "M3", "lb": 0.4}, {"input": "M1", "lb": 0.1}]}
+    b = {"con": [{"input": "M2", "lb": 0.5}, {"input": "M2", "lb": 0.5}, {"input": "M3", "lb": 0.4},
+                 {"input": "M3", "lb": 0.4}, {"input": "M1", "lb": 0.1}, {"input": "M1", "lb": 0.1}]}
+    s, rows = run_compare("json", write(tmp_path, "a.json", a), write(tmp_path, "b.json", b))
+    assert s["total"] == 0
+
+
+def test_unkeyed_changed_element_pairs_with_its_own_identity(tmp_path, run_compare):
+    a = {"con": [{"input": "M1", "lb": 0.1}, {"input": "M1", "lb": 0.1}, {"input": "M2", "lb": 0.5},
+                 {"input": "M2", "lb": 0.5}]}
+    b = {"con": [{"input": "M2", "lb": 0.9}, {"input": "M2", "lb": 0.5}, {"input": "M1", "lb": 0.1},
+                 {"input": "M1", "lb": 0.2}]}
+    s, rows = run_compare("json", write(tmp_path, "a.json", a), write(tmp_path, "b.json", b))
+    assert sorted((r["field"], r["old"], r["new"]) for r in rows) == [("lb", "0.1", "0.2"), ("lb", "0.5", "0.9")]
+
+
+def test_unkeyed_objects_report_surplus_at_original_position(tmp_path, run_compare):
+    base = [{"prop": "P1", "ub": None}, {"prop": "P2", "ub": None}]
+    extra = {"prop": "P2", "ub": 1.5}
+    s, rows = run_compare("json", write(tmp_path, "a.json", {"d": base}),
+                          write(tmp_path, "b.json", {"d": [base[1], base[0], extra, dict(base[1])]}))
+    assert [(r["kind"], r["path"]) for r in rows] == [("added", "d[2]"), ("added", "d[3]")]
+
+
+def test_unkeyed_objects_respect_numeric_tolerance(tmp_path, run_compare):
+    a = {"con": [{"input": "M1", "lb": 1.3}, {"input": "M1", "lb": 2.0}]}
+    b = {"con": [{"input": "M1", "lb": 2.0}, {"input": "M1", "lb": 1.2999999999999998}]}
+    s, rows = run_compare("json", write(tmp_path, "a.json", a), write(tmp_path, "b.json", b))
+    assert s["total"] == 0
+
+
+def test_list_fallback_index_keeps_positional_compare(tmp_path, run_compare):
+    a = {"con": [{"input": "M1", "lb": 1.0}, {"input": "M1", "lb": 2.0}]}
+    b = {"con": [{"input": "M1", "lb": 2.0}, {"input": "M1", "lb": 1.0}]}
+    s, rows = run_compare("json", write(tmp_path, "a.json", a), write(tmp_path, "b.json", b),
+                          list_fallback="index")
+    assert {r["path"] for r in rows} == {"con[0]/lb", "con[1]/lb"}
+
+
 def test_unkeyed_list_alignment(tmp_path, run_compare):
     a = {"v": [1, 2, 3, 4, 5]}
     b = {"v": [1, 2, 99, 3, 4, 5]}

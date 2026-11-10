@@ -30,6 +30,7 @@ ALIGN_MAX_CELLS = 25_000_000   # 不等长且无主键的列表，元素数乘�
 INFER_MAX_FIELDS = 10          # 自动推断主键时最多尝试元素的前几个字段
 INFER_MIN_UNIQUE = 0.9         # 推断出的主键允许少量重复（如真正重复的边），重复项按内容对齐
 INFER_MAX_ITEMS = 200_000      # 超大列表不做主键推断（组合数 × 元素数太贵）
+PAIR_MAX_CELLS = 250_000       # 无主键对象列表抵消后，剩余元素数乘积超过这个就不算相似度，按原顺序配对
 
 
 def _is_num(v) -> bool:
@@ -202,6 +203,8 @@ class JsonDiffer:
             self._multiset(a, b)
         elif mode == "align":
             self._align(a, b)
+        elif mode == "content":
+            self._content(a, b)
         else:
             self._index(a, b)
 
@@ -216,6 +219,8 @@ class JsonDiffer:
             keys = self._find_key(a, b, self.auto_keys, 2) or self._infer_key(a, b)
             if keys:
                 return "keyed", keys
+            if self.list_fallback == "align":
+                return "content", None
         elif self.str_lists_unordered and self._is_id_list(a) and self._is_id_list(b):
             return "multiset", None
         if len(a) == len(b):
@@ -259,17 +264,25 @@ class JsonDiffer:
 
     @staticmethod
     def _distinct_ratio(lst: list, keys: tuple) -> float:
-        """不同取值数 / 元素数；有元素缺键或值不可哈希时返回 0。空列表视为 1。"""
+        """不同取值数 / 元素数；有元素缺键或值不可哈希时返回 0。空列表视为 1。
+
+        允许一个元素的键值为 null（如分流块的默认去向 code 为空）；多个 null 或整个列表都是 null 时不能当主键。
+        """
         if not lst:
             return 1.0
         seen = set()
+        nulls = 0
         for e in lst:
             try:
                 v = tuple(e[k] for k in keys)
             except KeyError:
                 return 0.0
-            if any(x is None or isinstance(x, (dict, list)) for x in v):
+            if any(isinstance(x, (dict, list)) for x in v):
                 return 0.0
+            if any(x is None for x in v):
+                nulls += 1
+                if nulls > 1 or len(lst) == 1:
+                    return 0.0
             seen.add(v)
         return len(seen) / len(lst)
 
@@ -309,25 +322,76 @@ class JsonDiffer:
         if ra or rb:   # 缺主键 / 主键重复的元素：先抵消内容完全相同的，剩下的按顺序对齐
             self._residual(ra, rb)
 
-    def _residual(self, a: list, b: list) -> None:
+    def _unmatched(self, a: list, b: list) -> tuple[list[int], list[int]]:
+        """不看顺序抵消两边内容完全相同的元素，返回各自剩下元素的下标。"""
         sa = [dumps_sorted(self._strip(e)) for e in a]
         sb = [dumps_sorted(self._strip(e)) for e in b]
         left_b = Counter(sb)
         keep_a = []
-        for e, s in zip(a, sa):
+        for i, s in enumerate(sa):
             if left_b[s] > 0:
                 left_b[s] -= 1
             else:
-                keep_a.append(e)
+                keep_a.append(i)
         left_a = Counter(sa)
         keep_b = []
-        for e, s in zip(b, sb):
+        for j, s in enumerate(sb):
             if left_a[s] > 0:
                 left_a[s] -= 1
             else:
-                keep_b.append(e)
+                keep_b.append(j)
+        return keep_a, keep_b
+
+    def _residual(self, a: list, b: list) -> None:
+        keep_a, keep_b = self._unmatched(a, b)
         if keep_a or keep_b:
-            self._align(keep_a, keep_b, label="?")
+            self._align([a[i] for i in keep_a], [b[j] for j in keep_b], label="?")
+
+    def _content(self, a: list, b: list) -> None:
+        """没有主键的对象列表：顺序不算差异。内容相同的元素直接抵消，其余按相似度配对后深比较。"""
+        keep_a, keep_b = self._unmatched(a, b)
+        pairs = self._pair_similar(a, b, keep_a, keep_b)
+        path = self.path
+        for i, j in pairs:
+            path.append(f"[{i}]" if i == j else f"[{i}→{j}]")
+            self.walk(a[i], b[j])
+            path.pop()
+        used_a, used_b = {i for i, _ in pairs}, {j for _, j in pairs}
+        for i in keep_a:
+            if i not in used_a:
+                path.append(f"[{i}]")
+                self.emit("removed", a[i], MISSING)
+                path.pop()
+        for j in keep_b:
+            if j not in used_b:
+                path.append(f"[{j}]")
+                self.emit("added", MISSING, b[j])
+                path.pop()
+
+    def _pair_similar(self, a: list, b: list, keep_a: list[int], keep_b: list[int]) -> list[tuple[int, int]]:
+        """全局贪心：最相似的两个元素先配对；相似度相同时保持原有先后。"""
+        if len(keep_a) * len(keep_b) > PAIR_MAX_CELLS:
+            return list(zip(keep_a, keep_b))
+        ranked = sorted((self._similarity(a[i], b[j]), i, j) for i in keep_a for j in keep_b)
+        used_a, used_b, pairs = set(), set(), []
+        for _, i, j in ranked:
+            if i not in used_a and j not in used_b:
+                used_a.add(i)
+                used_b.add(j)
+                pairs.append((i, j))
+        return sorted(pairs)
+
+    def _similarity(self, x: dict, y: dict) -> tuple[int, int]:
+        """相同的非空字段数，取负后用于升序排序；字符串/整数字段更像标识，优先于其他取值。"""
+        ids = vals = 0
+        for k, v in x.items():
+            if k in self.ignore_keys or v is None or k not in y or v != y[k]:
+                continue
+            if type(v) is str or type(v) is int:
+                ids += 1
+            else:
+                vals += 1
+        return -ids, -vals
 
     def _index(self, a: list, b: list) -> None:
         path = self.path
@@ -441,7 +505,8 @@ class JsonComparator(Comparator):
               help="按顺序尝试，第一个在两边都唯一的键作为列表主键（再找不到就尝试两两组合）"),
         Param("list_fallback", "无主键列表的匹配方式", type="choice", default="align", advanced=True,
               choices=[("align", "按内容对齐（推荐）"), ("index", "按下标"), ("multiset", "当作无序集合")],
-              help="仅对找不到主键、且两边长度不同的列表生效；等长列表总是按下标比较"),
+              help="仅对找不到主键的列表生效。按内容对齐时，对象列表忽略顺序：内容相同的直接抵消，其余按相似度配对；"
+                   "数字等其他列表等长时按下标、不等长时按序列对齐"),
         Param("str_lists_unordered", "标识符列表忽略顺序", type="bool", default=True, advanced=True,
               help="由短标识符（无空格）组成的字符串列表，如 property_set、critical_nodes，按集合比较；日志/数字列表仍按顺序"),
     ]
