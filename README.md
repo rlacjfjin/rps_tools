@@ -39,6 +39,7 @@ python -m venv .venv
 - `requirements.txt` 只用于运行部署；测试和开发环境在同一虚拟环境执行 `python -m pip install -e ".[dev]"`，再运行 pytest。
 - 源码部署需要同步 `rps_tools/`、`requirements.txt`、`start_server.bat`（或 `run_server.py`），升级后重启服务。`.agents/skills/` 可随源码提供给 LLM/人工参考，不是程序运行依赖；`private/` 不用于公开分发。
 - wheel 包包含诊断模块、网页静态文件和公开说明，按明确清单打包，排除内部案例文档。安装 wheel 后通过 `rps-tools serve` 启动，使用 `--workspace` 指定可写产物目录、`--data-root` 指定本地数据目录。仓库 skill 单独随源码提供。
+- Windows 不带源码部署：安装 VS C++ 工具集后执行 `python scripts/build_windows.py`，产物在 `dist/rps_tools_server/`，目标机不需要 Python。整个目录一起发布；注册服务时把 WinSW 放进该目录并改名为 `rps_tools_service.exe`，按需修改同目录的 `rps_tools_service.xml`，再以管理员身份执行 `rps_tools_service.exe install`。首次整包部署后执行一次 `python scripts/build_windows.py --mark-deployed`；此后每次编译会生成只含变化文件的 `dist/update/`，复制到服务器后双击 `update.bat` 更新，不会改动 `rps_tools/workspace`、WinSW 和服务配置，失败时自动恢复。
 - 离线服务器需事先准备对应 Python/平台的依赖 wheel，配置 `PIP_NO_INDEX=1` 与 `PIP_FIND_LINKS=<wheel目录>` 后使用原启动脚本。运行时不需要联网调用 LLM。
 
 当前仓库提供 Windows 启动脚本和 Python 启动入口，没有单独的 Docker/Kubernetes 部署脚本；这次诊断迁移不要求增加这类服务。

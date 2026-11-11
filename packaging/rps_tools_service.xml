@@ -1,0 +1,24 @@
+<!--
+  WinSW service definition. Put WinSW next to this file, renamed to
+  rps_tools_service.exe, then run "rps_tools_service.exe install" as administrator.
+
+  Keep the workspace outside the release folder so upgrades do not delete job results.
+  LAN access: change the host to 0.0.0.0 and add one data-root argument per data folder.
+  Use UNC paths for network shares; services cannot see mapped drives.
+-->
+<service>
+  <id>rps_tools</id>
+  <name>RPS Tools</name>
+  <description>rps_tools diagnostic web service</description>
+  <executable>%BASE%\rps_tools_server.exe</executable>
+  <arguments>--host 127.0.0.1 --port 8765 --workspace "%ProgramData%\rps_tools\workspace"</arguments>
+  <workingdirectory>%BASE%</workingdirectory>
+  <logpath>%ProgramData%\rps_tools\logs</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+  <startmode>Automatic</startmode>
+  <onfailure action="restart" delay="10 sec"/>
+  <stoptimeout>15sec</stoptimeout>
+</service>

@@ -214,7 +214,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         import markdown
         p = output_path(job_id, rel)
         html = markdown.markdown(p.read_text(encoding="utf-8"),
-                                 extensions=["tables", "fenced_code", "toc", "sane_lists"])
+                                 extensions=["markdown.extensions.tables", "markdown.extensions.fenced_code",
+                                             "markdown.extensions.toc", "markdown.extensions.sane_lists"])
         # 报告里的大段 mermaid 源码默认折叠（图在 *.html 里看）
         html = re.sub(r'(<pre><code class="language-mermaid">.*?</code></pre>)',
                       r'<details class="mermaid-src"><summary>mermaid 源码（图请打开对应的 .html）</summary>\1</details>',
